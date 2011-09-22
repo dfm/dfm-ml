@@ -9,10 +9,15 @@ History
 
 """
 
+from __future__ import division
+
 __all__ = ['GaussianProcess']
 
 import numpy as np
-np.random.seed()
+np.random.seed(2)
+import scipy.sparse as sp
+import scipy.sparse.linalg
+import time
 
 class GaussianProcess(object):
     """
@@ -28,58 +33,56 @@ class GaussianProcess(object):
     2011-09-07 - Created by Dan Foreman-Mackey
 
     """
-    def __init__(self,**kwargs):
-        def _setattr(attr,val):
-            if attr in kwargs:
-                return kwargs[attr]
-            else:
-                return val
-        self._kernel = _setattr('kernel',self.default_kernel())
-        self._mean   = _setattr('mean',self.default_mean())
-        self._data   = _setattr('data',None)
+    def __init__(self,s2=1.0,a=1.0,l2=1.0):
+        self._s2 = s2
+        self._a  = a
+        self._l2 = l2
+        self._L,self._alpha = None,None
 
     def __repr__(self):
-        return "GaussianProcess(kernel=%s,mean=%s)"%(repr(self._kernel),
-                repr(self._mean))
+        return "GaussianProcess(s2=%f,a=%f,l2=%f)"%(self._s2,self._a,self._l2)
 
-    @staticmethod
-    def default_kernel(a=1.0,l=1.0):
-        """
-        A simple "squared exponential" kernel
+    def k(self,x1,x2,chi2max=25.0):
+        d = (x1-x2)**2/self._l2
+        k = self._a*np.exp(-0.5*d)
+        k[d > chi2max] = 0.0
+        return k
 
-        Returns
-        -------
-        k : function
-            The kernel function
+    def K(self,x,y=None):
+        b = self.k(x[:,np.newaxis],x[np.newaxis,:]) \
+            + self._s2*np.identity(len(x))
+        return b
 
-        History
-        -------
-        2011-09-07 - Created by Dan Foreman-Mackey
+    def fit(self,x,y):
+        Kxx = self.K(x,x)
+        nnz = sp.lil_matrix(Kxx).nnz
+        print "NNZ: ",nnz,nnz/np.product(np.shape(Kxx))
 
-        """
-        ml2_2 = -0.5*l**2
-        return lambda x1,x2: a*np.exp(ml2_2*(x1-x2)**2)
+        strt = time.time()
+        self._L = sp.linalg.factorized(sp.lil_matrix(Kxx).tocsc())
+        self._alpha = self._L(y)
+        print "sparse: ", time.time()-strt
 
-    @staticmethod
-    def default_mean():
-        """
-        My default mean value (... it's just zero!)
+    def test_sparse(self):
+        N = 8000
+        x = 1000*np.random.rand(N)
+        y = np.sin(x) + 0.1*np.random.randn(N)
 
-        Returns
-        -------
-        m : function
-            The mean function
+        # do it using dense algebra
+        # Kxx = self.K(x,x)
+        # strt = time.time()
+        # alpha = np.linalg.solve(Kxx,y)
+        # print "dense: ", time.time()-strt
 
-        History
-        -------
-        2011-09-07 - Created by Dan Foreman-Mackey
+        # sparse algebra
+        self.fit(x,y)
 
-        """
-        return lambda x: np.zeros(np.shape(x))
+        print np.linalg.norm(alpha-self._alpha)
+        assert np.linalg.norm(alpha-self._alpha) < 1e-10
 
-    def full_kernel(self,x,y):
-        K = self._kernel(x[:,np.newaxis],y[np.newaxis,:])
-        return K
+    def test_noiseless(self):
+        self._s2 = 0.01
+        self.test_sparse()
 
     def sample_prior(self,x):
         """
@@ -100,9 +103,7 @@ class GaussianProcess(object):
         2011-09-07 - Created by Dan Foreman-Mackey
 
         """
-        cov = self.full_kernel(x,x)
-        mean = self._mean(x)
-        return np.random.multivariate_normal(mean,cov)
+        return np.random.multivariate_normal(np.zeros(len(x)),self.K(x).todense())
 
     def sample(self,x):
         """
@@ -129,12 +130,19 @@ class GaussianProcess(object):
         return np.random.multivariate_normal(mean,cov)
 
 if __name__ == '__main__':
+    import sys
     import pylab as pl
-    data=2*np.random.randn(100).reshape((50,2))
-    p = GaussianProcess(data=data)
+
+    x = np.random.rand(5)
+    y = np.random.rand(5)
+
+    p = GaussianProcess()
+    p.test_noiseless()
+
+    sys.exit(0)
     for i in range(100):
         x = np.random.rand(100)*10-5
-        y = p.sample(x)
+        y = p.sample_prior(x)
         pl.plot(x,y,'.k',alpha=0.3)
     pl.plot(data[:,0],data[:,1],'or')
     pl.show()
