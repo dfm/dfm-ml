@@ -1,2 +1,2 @@
-What about Gaussian processes?
+Another Machine Learning library
 

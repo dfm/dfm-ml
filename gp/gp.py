@@ -102,7 +102,6 @@ class GaussianProcess(object):
 
     def optimize(self,x,y):
         def chi2(p):
-            print p
             self._a,self._l2,self._s2 = p**2
             self.fit(x,y)
             detK = np.log(det(self._Kxx.todense())) \
