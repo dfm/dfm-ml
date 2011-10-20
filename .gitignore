@@ -3,3 +3,4 @@
 .*sw[pom]
 *.so
 
+.DS_Store
