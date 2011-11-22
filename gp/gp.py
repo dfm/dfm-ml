@@ -14,10 +14,13 @@ from __future__ import division
 __all__ = ['GaussianProcess']
 
 import numpy as np
+
 import scipy.sparse as sp
 import scipy.sparse.linalg
 from scipy.linalg import det
 import scipy.optimize as op
+
+from _gp import _sparse_k
 
 class GaussianProcess(object):
     """
@@ -74,8 +77,8 @@ class GaussianProcess(object):
     def K(self,x,y=None):
         if y is None:
             y = x
-        b = self.k(x[:,np.newaxis],y[np.newaxis,:]) \
-            + self._s2*sp.identity(len(x),format="csc")
+        b = _sparse_k(self._a, self._l2, x, y) \
+            + self._s2 * sp.identity(len(x),format="csc")
         return b
 
     def fit(self,x,y):
@@ -88,12 +91,12 @@ class GaussianProcess(object):
 
     def __call__(self,x,cov=False):
         assert self._L is not None
-        ks = self.k(x[:,np.newaxis],self._x[np.newaxis,:])
+        ks = _sparse_k(self._a, self._l2, x, self._x)
         # calculate the mean
         f = ks.dot(np.atleast_2d(self._alpha).T)[:,0]
         if not cov:
             return f
-        kss = self.k(x[:,np.newaxis],x[np.newaxis,:])
+        kss = _sparse_k(self._a, self._l2, x, x)
         kik = np.zeros(ks.shape)
         for i in xrange(ks.shape[0]):
             kik[i,:] = self._L.solve(np.array(ks[i,:].todense())[0])
@@ -150,14 +153,15 @@ if __name__ == '__main__':
     import pylab as pl
     np.random.seed(5)
 
-    N = 50
+    N = 1000
     s = 10
     x = s*np.random.rand(N)
     y = np.sin(x) + 0.1*np.random.randn(N)
 
     p = GaussianProcess(l2=0.5)
     p._s2 = 0.001
-    p.optimize(x,y)
+    #p.optimize(x,y)
+    p.fit(x,y)
 
     # plot fit
     x0 = np.linspace(min(x),max(x),500)
